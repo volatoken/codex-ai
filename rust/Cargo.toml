@@ -1,0 +1,29 @@
+[package]
+name = "codex-ai"
+version = "0.1.0"
+edition = "2021"
+description = "Hybrid Rust+Python Telegram AI tool builder"
+
+[[bin]]
+name = "codex-ai"
+path = "src/main.rs"
+
+[dependencies]
+teloxide = { version = "0.13", features = ["macros"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dotenvy = "0.15"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"
+sysinfo = "0.31"
+tokio-cron-scheduler = "0.11"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4"] }
+reqwest = { version = "0.12", features = ["json"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true

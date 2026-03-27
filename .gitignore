@@ -1,0 +1,41 @@
+# Rust
+rust/target/
+**/*.rs.bk
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Environment
+.env
+
+# Data (local only)
+data/memory/
+data/*.json
+data/supervisor/
+data/code_cache/
+!data/.gitkeep
+
+# Workspace (generated tools)
+workspace/projects/*/
+!workspace/projects/.gitkeep
+
+# Logs
+logs/*.log
+!logs/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Old scaffold
+hybrid-rust-python/
