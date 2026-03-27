@@ -1,5 +1,5 @@
-# ============================================================
-# Codex AI — Cai dat tu dong tren Windows Server VPS
+﻿# ============================================================
+# Codex AI â€” Cai dat tu dong tren Windows Server VPS
 # Chay PowerShell voi quyen Administrator:
 #   powershell -ExecutionPolicy Bypass -File install-vps.ps1
 #
@@ -7,7 +7,7 @@
 #          Docker Engine, DeerFlow Backend, CLIProxyAPI
 # KHONG can Docker Desktop, KHONG can Hyper-V
 #
-# FIX: Rust dung MSVC toolchain (khong dung GNU — loi dlltool)
+# FIX: Rust dung MSVC toolchain (khong dung GNU â€” loi dlltool)
 # FIX: Docker Engine dung Microsoft install script
 # ============================================================
 $ErrorActionPreference = 'Stop'
@@ -75,7 +75,7 @@ if (!$vsInstalled) {
 }
 
 # ==============================================================
-# [4/10] Rust (MSVC toolchain — FIX loi dlltool.exe)
+# [4/10] Rust (MSVC toolchain â€” FIX loi dlltool.exe)
 # ==============================================================
 Write-Host "[4/10] Cai Rust (MSVC toolchain)..." -ForegroundColor Yellow
 if (!(Get-Command cargo -ErrorAction SilentlyContinue)) {
@@ -94,7 +94,7 @@ if (!(Get-Command cargo -ErrorAction SilentlyContinue)) {
     # Dam bao dang dung MSVC, khong phai GNU
     $currentToolchain = rustup show active-toolchain 2>$null
     if ($currentToolchain -like "*gnu*") {
-        Write-Host "  Dang dung GNU toolchain — chuyen sang MSVC..." -ForegroundColor DarkYellow
+        Write-Host "  Dang dung GNU toolchain â€” chuyen sang MSVC..." -ForegroundColor DarkYellow
         rustup toolchain install stable-x86_64-pc-windows-msvc 2>&1 | Out-Null
         rustup default stable-x86_64-pc-windows-msvc 2>&1 | Out-Null
         Write-Host "  Da chuyen sang MSVC: $(rustc --version)" -ForegroundColor Green
@@ -196,7 +196,7 @@ if (Test-Path "rust\target\release\.fingerprint") {
 cargo build --release --manifest-path=rust\Cargo.toml
 if ($LASTEXITCODE -ne 0) {
     Write-Host "  LOI: Build Rust that bai! Kiem tra lai VS Build Tools + MSVC toolchain." -ForegroundColor Red
-    Write-Host "  Chay: rustup show  — phai thay stable-x86_64-pc-windows-msvc (default)" -ForegroundColor Red
+    Write-Host "  Chay: rustup show  â€” phai thay stable-x86_64-pc-windows-msvc (default)" -ForegroundColor Red
     Pop-Location
     exit 1
 }
@@ -248,7 +248,7 @@ if (!(Test-Path $cliproxyExe)) {
     if (!(Test-Path "$cliproxyDir\config.yaml")) {
         @"
 # CLIProxyAPI Configuration
-# Chinh sua theo nhu cau — xem: https://help.router-for.me/
+# Chinh sua theo nhu cau â€” xem: https://help.router-for.me/
 
 server:
   port: 8080
@@ -304,7 +304,7 @@ Write-Host "========================================================" -Foregroun
 Write-Host ""
 Write-Host "  Da cai:" -ForegroundColor White
 Write-Host "    [OK] Git, Python 3.12, VS Build Tools" -ForegroundColor Green
-Write-Host "    [OK] Rust (MSVC toolchain — khong loi dlltool)" -ForegroundColor Green
+Write-Host "    [OK] Rust (MSVC toolchain â€” khong loi dlltool)" -ForegroundColor Green
 Write-Host "    [OK] Docker Engine + Docker Compose" -ForegroundColor Green
 Write-Host "    [OK] Rust Gateway: rust\target\release\codex-ai.exe" -ForegroundColor Green
 Write-Host "    [OK] CLIProxyAPI: $cliproxyDir\CLIProxyAPI.exe" -ForegroundColor Green
@@ -340,3 +340,4 @@ Write-Host ""
 Write-Host "  Hoac chay TAT CA bang Docker:" -ForegroundColor Yellow
 Write-Host "     docker compose up -d --build" -ForegroundColor White
 Write-Host ""
+
