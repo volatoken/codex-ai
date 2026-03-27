@@ -1,5 +1,5 @@
 use anyhow::Result;
-use tracing::info;
+use tracing::{info, warn};
 
 mod config;
 mod gateway;
@@ -20,8 +20,17 @@ async fn main() -> Result<()> {
     dotenvy::dotenv().ok();
 
     let settings = config::Settings::from_env()?;
-    info!("Codex AI starting...");
+    info!("Codex AI starting... (Rust Gateway + DeerFlow Backend)");
     info!("RAM limit: {}MB", settings.total_ram_mb);
+    info!("DeerFlow URL: {}", settings.deerflow_url);
+
+    // Check DeerFlow backend connectivity
+    let df_bridge = bridge::deerflow::DeerFlowBridge::new(&settings);
+    match df_bridge.health_check().await {
+        Ok(true) => info!("DeerFlow backend is healthy"),
+        Ok(false) => warn!("DeerFlow backend returned unhealthy — builds will fail until it's up"),
+        Err(e) => warn!("Cannot reach DeerFlow backend: {e} — make sure it's running"),
+    }
 
     // Initialize shared state
     let state = AppState::new(settings).await?;

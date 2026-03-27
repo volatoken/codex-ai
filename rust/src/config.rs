@@ -11,7 +11,7 @@ pub struct Settings {
     pub llm_base_url: String,
     pub llm_model: String,
 
-    pub python_bin: String,
+    pub deerflow_url: String,
     pub total_ram_mb: u64,
 }
 
@@ -36,7 +36,8 @@ impl Settings {
             llm_model: std::env::var("LLM_MODEL")
                 .unwrap_or_else(|_| "anthropic/claude-sonnet-4-20250514".into()),
 
-            python_bin: std::env::var("PYTHON_BIN").unwrap_or_else(|_| "python".into()),
+            deerflow_url: std::env::var("DEERFLOW_URL")
+                .unwrap_or_else(|_| "http://localhost:2024".into()),
             total_ram_mb: std::env::var("TOTAL_RAM_MB")
                 .unwrap_or_else(|_| "8192".into())
                 .parse()

@@ -1,27 +1,18 @@
-.PHONY: all build build-rust setup-python run test clean help
+.PHONY: all build build-debug run run-debug test-rust clean up down logs help
 
 RUST_DIR = rust
-PYTHON_DIR = python
 
 all: build
 
-# Build Rust binary (release)
+# Build Rust gateway binary (release)
 build:
 	cargo build --release --manifest-path=$(RUST_DIR)/Cargo.toml
 
-# Build Rust binary (debug)
+# Build Rust gateway binary (debug)
 build-debug:
 	cargo build --manifest-path=$(RUST_DIR)/Cargo.toml
 
-# Setup Python virtual environment and install dependencies
-setup-python:
-ifeq ($(OS),Windows_NT)
-	cd $(PYTHON_DIR) && python -m venv .venv && .venv\Scripts\pip install -r requirements.txt
-else
-	cd $(PYTHON_DIR) && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-endif
-
-# Run the application (Rust binary)
+# Run the Rust gateway directly (DeerFlow must be running separately)
 run: build
 ifeq ($(OS),Windows_NT)
 	.\$(RUST_DIR)\target\release\codex-ai.exe
@@ -37,9 +28,17 @@ else
 	./$(RUST_DIR)/target/debug/codex-ai
 endif
 
-# Run Python tests
-test:
-	cd $(PYTHON_DIR) && python -m pytest tests/ -v
+# Start full stack via docker compose (Rust Gateway + DeerFlow)
+up:
+	docker compose up -d --build
+
+# Stop full stack
+down:
+	docker compose down
+
+# View logs
+logs:
+	docker compose logs -f
 
 # Run Rust tests
 test-rust:
@@ -48,19 +47,22 @@ test-rust:
 # Clean all builds
 clean:
 	cargo clean --manifest-path=$(RUST_DIR)/Cargo.toml
-	find $(PYTHON_DIR) -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 
 # Full setup
-setup: setup-python build
-	@echo "Setup complete. Edit .env then run: make run"
+setup: build
+	@echo "Setup complete."
+	@echo "1. Copy .env.example to .env and fill in values"
+	@echo "2. Start DeerFlow: docker compose up deerflow -d"
+	@echo "3. Run gateway: make run"
 
 help:
-	@echo "Codex AI - Hybrid Rust+Python"
+	@echo "Codex AI — Rust Gateway + DeerFlow Backend"
 	@echo ""
-	@echo "  make build        - Build Rust binary (release)"
-	@echo "  make setup-python - Setup Python venv + deps"
-	@echo "  make setup        - Full setup (python + rust)"
-	@echo "  make run          - Build and run"
-	@echo "  make test         - Run Python tests"
-	@echo "  make test-rust    - Run Rust tests"
-	@echo "  make clean        - Clean build artifacts"
+	@echo "  make build      - Build Rust gateway (release)"
+	@echo "  make run        - Build and run gateway"
+	@echo "  make up         - Start full stack (docker compose)"
+	@echo "  make down       - Stop full stack"
+	@echo "  make logs       - View docker compose logs"
+	@echo "  make test-rust  - Run Rust tests"
+	@echo "  make clean      - Clean build artifacts"
+	@echo "  make setup      - Full setup with instructions"

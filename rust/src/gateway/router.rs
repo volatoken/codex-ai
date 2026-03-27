@@ -4,7 +4,7 @@ use teloxide::types::{Message, MessageId, ThreadId};
 use tracing::info;
 
 use crate::AppState;
-use crate::bridge::python::PythonBridge;
+use crate::bridge::deerflow::DeerFlowBridge;
 use crate::orchestrator::queue::BuildQueue;
 
 /// Helper to get thread_id for replies, defaulting to General topic.
@@ -53,43 +53,36 @@ async fn handle_idea(
     state: &AppState,
     build_queue: &BuildQueue,
 ) -> Result<()> {
-    bot.send_message(msg.chat.id, "🧠 Received your idea! Starting analysis...")
+    bot.send_message(msg.chat.id, "🧠 Received your idea! Sending to DeerFlow for analysis...")
         .message_thread_id(reply_thread(msg))
         .await?;
 
-    // Send to Python worker for planning
-    let bridge = PythonBridge::new(&state.settings);
-    let request = serde_json::json!({
-        "action": "process_idea",
-        "payload": {
-            "idea": text,
-            "user_id": user_id,
-        }
-    });
+    let bridge = DeerFlowBridge::new(&state.settings);
 
-    match bridge.call(request).await {
+    match bridge.process_idea(text, user_id).await {
         Ok(response) => {
-            let summary = response["result"]["plan_summary"]
-                .as_str()
-                .unwrap_or("Plan generated.");
-            let project_name = response["result"]["project_name"]
-                .as_str()
-                .unwrap_or("unnamed");
+            let project_name = response
+                .extract_project_name()
+                .unwrap_or_else(|| "unnamed".into());
+            let summary = response.extract_summary();
 
             let reply = format!(
-                "📋 **Plan: {project_name}**\n\n{summary}\n\n\
-                 Reply `/approve` to start building or `/reject` to cancel."
+                "📋 Plan: {project_name}\n\n{summary}\n\n\
+                 Reply /approve to start building or /reject to cancel."
             );
-            bot.send_message(msg.chat.id, reply)
+            bot.send_message(msg.chat.id, &reply)
                 .message_thread_id(reply_thread(msg))
-                .parse_mode(teloxide::types::ParseMode::MarkdownV2)
-                .await
-                .ok(); // Fallback if markdown fails
+                .await?;
 
-            // If auto-approve or user approves, enqueue build
+            // If user approves, enqueue build
             if text.starts_with("/approve") {
+                let plan = serde_json::json!({
+                    "project_name": project_name,
+                    "plan_text": response.answer,
+                    "thread_id": response.thread_id,
+                });
                 build_queue
-                    .enqueue(project_name.to_string(), response["result"].clone())
+                    .enqueue(project_name.to_string(), plan)
                     .await?;
                 bot.send_message(msg.chat.id, "🚀 Build enqueued!")
                     .message_thread_id(reply_thread(msg))
@@ -97,7 +90,7 @@ async fn handle_idea(
             }
         }
         Err(e) => {
-            bot.send_message(msg.chat.id, format!("❌ Error: {e:#}"))
+            bot.send_message(msg.chat.id, format!("❌ DeerFlow error: {e:#}"))
                 .message_thread_id(reply_thread(msg))
                 .await?;
         }
@@ -110,33 +103,29 @@ async fn handle_research(
     bot: Bot,
     msg: &Message,
     text: &str,
-    user_id: i64,
+    _user_id: i64,
     state: &AppState,
 ) -> Result<()> {
-    bot.send_message(msg.chat.id, "🔍 Researching...")
+    bot.send_message(msg.chat.id, "🔍 Sending to DeerFlow for research...")
         .message_thread_id(reply_thread(msg))
         .await?;
 
-    let bridge = PythonBridge::new(&state.settings);
-    let request = serde_json::json!({
-        "action": "research",
-        "payload": {
-            "query": text,
-            "user_id": user_id,
-        }
-    });
+    let bridge = DeerFlowBridge::new(&state.settings);
 
-    match bridge.call(request).await {
+    match bridge.research(text).await {
         Ok(response) => {
-            let result = response["result"]["answer"]
-                .as_str()
-                .unwrap_or("No results found.");
-            bot.send_message(msg.chat.id, format!("📝 {result}"))
+            // Telegram message limit is 4096 chars
+            let answer = if response.answer.len() > 4000 {
+                format!("{}...\n\n(truncated)", &response.answer[..4000])
+            } else {
+                response.answer
+            };
+            bot.send_message(msg.chat.id, format!("📝 {answer}"))
                 .message_thread_id(reply_thread(msg))
                 .await?;
         }
         Err(e) => {
-            bot.send_message(msg.chat.id, format!("❌ Error: {e:#}"))
+            bot.send_message(msg.chat.id, format!("❌ DeerFlow error: {e:#}"))
                 .message_thread_id(reply_thread(msg))
                 .await?;
         }

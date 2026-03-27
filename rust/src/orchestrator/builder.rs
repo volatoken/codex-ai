@@ -1,13 +1,13 @@
 use anyhow::Result;
-use tracing::info;
+use tracing::{info, warn};
 
 use super::queue::BuildJob;
 use super::ram_guard::RamGuard;
-use crate::bridge::python::PythonBridge;
+use crate::bridge::deerflow::DeerFlowBridge;
 use crate::config::Settings;
 use crate::supervisor::ProcessSupervisor;
 
-/// Manages parallel execution of build phases with RAM awareness.
+/// Manages build phases using DeerFlow AI backend with RAM awareness.
 #[derive(Clone)]
 pub struct ParallelBuilder {
     ram_guard: std::sync::Arc<RamGuard>,
@@ -22,93 +22,100 @@ impl ParallelBuilder {
         }
     }
 
-    /// Run planning phase via Python worker
-    pub async fn run_planning(&self, job: &BuildJob) -> Result<()> {
-        info!("[{}] Phase: Planning", job.project_name);
-        // RAM check: planning needs ~200MB
+    /// Run planning phase via DeerFlow
+    pub async fn run_planning(&self, job: &mut BuildJob) -> Result<()> {
+        info!("[{}] Phase: Planning via DeerFlow", job.project_name);
         self.ram_guard.wait_for(200).await;
 
         let settings = Settings::from_env()?;
-        let bridge = PythonBridge::new(&settings);
-        let request = serde_json::json!({
-            "action": "plan",
-            "payload": {
-                "project_name": job.project_name,
-                "plan": job.plan,
-            }
-        });
+        let bridge = DeerFlowBridge::new(&settings);
 
-        let response = bridge.call(request).await?;
+        let response = bridge
+            .process_idea(
+                &serde_json::to_string(&job.plan).unwrap_or_default(),
+                0,
+            )
+            .await?;
+
         info!("[{}] Planning complete", job.project_name);
 
+        // Store thread_id for subsequent phases (maintains conversation context)
+        job.thread_id = Some(response.thread_id.clone());
+
         // Save plan to workspace
-        let plan_path = format!("workspace/projects/{}/plan.json", job.project_name);
+        let plan_path = format!("workspace/projects/{}/plan.md", job.project_name);
         tokio::fs::create_dir_all(format!("workspace/projects/{}", job.project_name)).await?;
-        tokio::fs::write(&plan_path, serde_json::to_string_pretty(&response)?).await?;
+        tokio::fs::write(&plan_path, &response.answer).await?;
 
         Ok(())
     }
 
-    /// Run coding phase via Python worker
+    /// Run coding phase via DeerFlow (uses same thread for context continuity)
     pub async fn run_coding(&self, job: &BuildJob) -> Result<()> {
-        info!("[{}] Phase: Coding", job.project_name);
+        info!("[{}] Phase: Coding via DeerFlow", job.project_name);
         self.ram_guard.wait_for(300).await;
 
         let settings = Settings::from_env()?;
-        let bridge = PythonBridge::new(&settings);
-        let request = serde_json::json!({
-            "action": "code",
-            "payload": {
-                "project_name": job.project_name,
-                "plan": job.plan,
-            }
-        });
+        let bridge = DeerFlowBridge::new(&settings);
 
-        let response = bridge.call(request).await?;
+        let thread_id = job.thread_id.as_deref().unwrap_or("default");
+        let response = bridge
+            .generate_code(thread_id, &job.project_name, &job.plan)
+            .await?;
+
         info!("[{}] Coding complete", job.project_name);
 
-        // Save generated code
-        if let Some(files) = response["result"]["files"].as_object() {
-            for (filename, content) in files {
-                let file_path = format!(
-                    "workspace/projects/{}/src/{}",
-                    job.project_name, filename
-                );
+        // Extract and save generated files
+        let files = response.extract_files();
+        if files.is_empty() {
+            warn!("[{}] No files extracted from DeerFlow response, saving raw output", job.project_name);
+            let raw_path = format!("workspace/projects/{}/deerflow_output.md", job.project_name);
+            tokio::fs::write(&raw_path, &response.answer).await?;
+        } else {
+            for (filename, content) in &files {
+                let file_path = format!("workspace/projects/{}/{}", job.project_name, filename);
                 if let Some(dir) = std::path::Path::new(&file_path).parent() {
                     tokio::fs::create_dir_all(dir).await?;
                 }
-                if let Some(code) = content.as_str() {
-                    tokio::fs::write(&file_path, code).await?;
-                }
+                tokio::fs::write(&file_path, content).await?;
+                info!("[{}] Written: {}", job.project_name, filename);
             }
         }
 
         Ok(())
     }
 
-    /// Run testing phase via Python worker
+    /// Run testing/review phase via DeerFlow (self-fix loop)
     pub async fn run_testing(&self, job: &BuildJob) -> Result<()> {
-        info!("[{}] Phase: Testing", job.project_name);
+        info!("[{}] Phase: Testing via DeerFlow", job.project_name);
         self.ram_guard.wait_for(200).await;
 
         let settings = Settings::from_env()?;
-        let bridge = PythonBridge::new(&settings);
-        let request = serde_json::json!({
-            "action": "test",
-            "payload": {
-                "project_name": job.project_name,
-            }
-        });
+        let bridge = DeerFlowBridge::new(&settings);
+        let thread_id = job.thread_id.as_deref().unwrap_or("default");
 
-        let response = bridge.call(request).await?;
-        let passed = response["result"]["passed"].as_bool().unwrap_or(false);
+        // DeerFlow has built-in self-fix loops — it will review, test, and fix
+        let response = bridge.review_and_test(thread_id, &job.project_name).await?;
 
-        if !passed {
+        if !response.test_passed() {
+            // Save the review feedback
+            let review_path = format!("workspace/projects/{}/review.md", job.project_name);
+            tokio::fs::write(&review_path, &response.answer).await?;
             anyhow::bail!(
-                "Tests failed for {}: {}",
-                job.project_name,
-                response["result"]["error"].as_str().unwrap_or("unknown")
+                "DeerFlow review failed for {}: see review.md for details",
+                job.project_name
             );
+        }
+
+        // Apply any corrected files
+        let fixes = response.extract_files();
+        for (filename, content) in &fixes {
+            let file_path = format!("workspace/projects/{}/{}", job.project_name, filename);
+            if let Some(dir) = std::path::Path::new(&file_path).parent() {
+                tokio::fs::create_dir_all(dir).await?;
+            }
+            tokio::fs::write(&file_path, content).await?;
+            info!("[{}] Fixed: {}", job.project_name, filename);
         }
 
         info!("[{}] Tests passed", job.project_name);
@@ -118,7 +125,6 @@ impl ParallelBuilder {
     /// Run Docker build (heavy — RAM gated)
     pub async fn run_docker_build(&self, job: &BuildJob) -> Result<()> {
         info!("[{}] Phase: Docker Build", job.project_name);
-        // Docker build needs ~1GB
         self.ram_guard.wait_for(1024).await;
 
         let project_dir = format!("workspace/projects/{}", job.project_name);

@@ -1,0 +1,65 @@
+# DeerFlow Configuration for Codex AI
+# This file configures the DeerFlow LangGraph backend
+
+# === Models ===
+# DeerFlow supports multiple LLM providers via LangChain
+models:
+  default:
+    model_name: "${LLM_MODEL:-anthropic/claude-sonnet-4-20250514}"
+    api_key: "${LLM_API_KEY}"
+    base_url: "${LLM_BASE_URL:-https://openrouter.ai/api/v1}"
+    temperature: 0.1
+    max_tokens: 16384
+
+  fast:
+    model_name: "${LLM_MODEL_FAST:-anthropic/claude-haiku-4}"
+    api_key: "${LLM_API_KEY}"
+    base_url: "${LLM_BASE_URL:-https://openrouter.ai/api/v1}"
+    temperature: 0.0
+    max_tokens: 4096
+
+# === Tool Groups ===
+# Tools available to DeerFlow agents
+tool_groups:
+  - name: web_search
+    enabled: true
+  - name: crawl
+    enabled: true
+  - name: python_repl
+    enabled: true
+
+# === Sandbox ===
+# DeerFlow sandbox for executing code safely
+sandbox:
+  type: docker
+  # Timeout for code execution (seconds)
+  timeout: 120
+  # Memory limit per sandbox container
+  memory_limit: "512m"
+  # Mount workspace for file access
+  volumes:
+    - host: "./workspace"
+      container: "/mnt/workspace"
+    - host: "./data"
+      container: "/mnt/data"
+
+# === Skills ===
+# Custom skills extend DeerFlow's capabilities
+skills:
+  # Path to custom skills directory
+  custom_skills_path: "./deerflow/skills/custom"
+  # Auto-load skills based on task context
+  auto_load: true
+
+# === Memory ===
+# Long-term memory via Mem0 (optional)
+memory:
+  enabled: true
+  provider: "local"
+  # provider: "mem0"
+  # mem0_api_key: "${MEM0_API_KEY}"
+
+# === Server ===
+server:
+  host: "0.0.0.0"
+  port: 2024

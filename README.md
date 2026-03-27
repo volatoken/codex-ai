@@ -2,13 +2,13 @@
 
 **Automated Tool Builder** — Turn ideas into 24/7 running tools via Telegram.
 
-Send an idea to your Telegram group → AI agents plan, code, test, and deploy it as a Docker container running on your VPS. All managed through Telegram Forum Topics.
+Send an idea to your Telegram group → DeerFlow AI agents plan, code, test, and deploy it as a Docker container running on your VPS. All managed through Telegram Forum Topics.
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────┐
-│                 Telegram Group                    │
+│            Telegram Supergroup (Forum)            │
 │  ┌──────┐ ┌────────┐ ┌─────────┐ ┌───────────┐ │
 │  │Ideas │ │Research│ │Dashboard│ │Tool Mgmt  │ │
 │  └──┬───┘ └───┬────┘ └────┬────┘ └─────┬─────┘ │
@@ -16,26 +16,34 @@ Send an idea to your Telegram group → AI agents plan, code, test, and deploy i
       │         │           │             │
       ▼         ▼           ▼             ▼
 ┌─────────────────────────────────────────────────┐
-│              Rust Core (~15MB RAM)               │
+│           Rust Gateway (~15MB RAM)               │
 │  ┌─────────┐ ┌──────────┐ ┌──────────────────┐ │
 │  │ Gateway │ │Orchestr. │ │   Supervisor     │ │
 │  │ (Bot +  │ │(Queue +  │ │  (Process Mgr +  │ │
-│  │ Router) │ │ Builder) │ │   Scheduler)     │ │
+│  │ Router +│ │ Builder +│ │   Scheduler)     │ │
+│  │ Topics) │ │RAM Guard)│ │                  │ │
 │  └────┬────┘ └─────┬────┘ └──────────────────┘ │
 │       │            │                             │
 │       ▼            ▼                             │
 │  ┌─────────────────────┐                        │
-│  │  Python Bridge      │ JSON/stdin/stdout      │
+│  │  DeerFlow Bridge    │  HTTP / SSE Streaming  │
 │  └──────────┬──────────┘                        │
 └─────────────┼───────────────────────────────────┘
               │
               ▼
 ┌─────────────────────────────────────────────────┐
-│           Python Workers (~50MB per call)        │
-│  ┌────────┐ ┌──────┐ ┌─────┐ ┌──────┐         │
-│  │Planner │ │Critic│ │Coder│ │Tester│ ...      │
-│  └────────┘ └──────┘ └─────┘ └──────┘         │
-│              LLM API (OpenRouter/OpenAI)         │
+│        DeerFlow 2.0 Backend (~300MB RAM)         │
+│  ┌──────────────────────────────────────┐       │
+│  │        LangGraph Agent Server         │       │
+│  │  ┌────────┐ ┌──────┐ ┌───────────┐  │       │
+│  │  │Planner │ │Coder │ │Researcher │  │       │
+│  │  └────────┘ └──────┘ └───────────┘  │       │
+│  │  ┌──────────┐ ┌────────┐ ┌───────┐  │       │
+│  │  │ Sandbox  │ │ Memory │ │Skills │  │       │
+│  │  │ (Docker) │ │ (Mem0) │ │ (MD)  │  │       │
+│  │  └──────────┘ └────────┘ └───────┘  │       │
+│  └──────────────────────────────────────┘       │
+│              LLM API (OpenRouter/CliproxyAPI)     │
 └─────────────────────────────────────────────────┘
               │
               ▼
@@ -48,20 +56,29 @@ Send an idea to your Telegram group → AI agents plan, code, test, and deploy i
 └─────────────────────────────────────────────────┘
 ```
 
-## Hybrid Rust + Python
+## Rust Gateway + DeerFlow Backend
 
 | Component | Language | Why |
 |-----------|----------|-----|
-| Telegram Bot | Rust (teloxide) | Low RAM, fast, concurrent |
+| Telegram Bot | Rust (teloxide) | Low RAM, fast, Forum Topics support |
 | Message Router | Rust | Pattern matching, zero allocation |
 | Build Queue | Rust (tokio) | Semaphores, async channels |
 | RAM Guard | Rust (sysinfo) | Real-time memory monitoring |
 | Process Supervisor | Rust | Docker management, health checks |
 | Scheduler | Rust (cron) | Lightweight cron jobs |
-| **LLM Agents** | **Python** | Rich ecosystem, httpx, rapid iteration |
-| **Memory** | **Python** | JSON-based project memory |
+| **AI Agents** | **DeerFlow (LangGraph)** | Sub-agents, sandbox, self-fix loops, memory |
+| **Code Execution** | **DeerFlow Sandbox** | Docker-isolated code execution |
+| **Research** | **DeerFlow** | Web search, crawling, analysis |
+| **Memory** | **DeerFlow (Mem0)** | Long-term memory across conversations |
 
-**Communication**: Rust spawns Python workers as subprocesses. JSON protocol over stdin/stdout.
+**Communication**: Rust Gateway calls DeerFlow via HTTP API (REST + SSE streaming). DeerFlow handles all AI/LLM work internally.
+
+### Why Both Rust + DeerFlow?
+
+- **DeerFlow** doesn't support Telegram **Forum Topics** (only basic reply threading)
+- Rust Gateway adds: Forum Topics routing, Build Queue, RAM Guard, Process Supervisor
+- DeerFlow adds: LangGraph multi-agent orchestration, sandbox code execution, self-fix loops, progressive skills
+- Idle RAM: Rust ~15MB + DeerFlow ~300MB = **~315MB** (leaves ~7.7GB on 8GB VPS)
 
 ## Telegram Forum Topics
 
@@ -78,10 +95,9 @@ Send an idea to your Telegram group → AI agents plan, code, test, and deploy i
 
 ### Prerequisites
 - Rust 1.75+
-- Python 3.11+
-- Docker (for deploying tools)
+- Docker & Docker Compose
 - Telegram Bot Token ([BotFather](https://t.me/BotFather))
-- LLM API Key (OpenRouter, OpenAI, etc.)
+- LLM API Key (OpenRouter, CliproxyAPI, etc.)
 
 ### Setup
 
@@ -90,72 +106,83 @@ Send an idea to your Telegram group → AI agents plan, code, test, and deploy i
 git clone https://github.com/volatoken/codex-ai.git
 cd codex-ai
 
-# Setup (Linux/Mac)
-chmod +x scripts/setup.sh
-./scripts/setup.sh
-
-# Setup (Windows)
-powershell -ExecutionPolicy Bypass -File scripts/setup.ps1
+# Configure
+cp .env.example .env
+# Edit .env with your tokens and API keys
 ```
 
-### Configure
-
-Edit `.env`:
-```env
-TELEGRAM_BOT_TOKEN=your_bot_token
-TELEGRAM_GROUP_ID=-100xxxxxxxxxx
-TELEGRAM_ADMIN_USER_ID=your_user_id
-LLM_API_KEY=your_api_key
-```
-
-### Run
+### Run (Docker Compose — recommended)
 
 ```bash
+# Start full stack: Rust Gateway + DeerFlow
+make up
+
+# View logs
+make logs
+
+# Stop
+make down
+```
+
+### Run (Manual — development)
+
+```bash
+# Terminal 1: Start DeerFlow
+docker compose up deerflow -d
+
+# Terminal 2: Build and run Rust gateway
 make run
 ```
 
 ## Build Pipeline
 
 ```
-Idea → Planner → Critic → [Approve] → Coder → Tester → Docker Build → Deploy
-                    ↑                     ↑
-                    └─── Reject ──────────┘ (retry with fixes)
+Idea → DeerFlow Planner → [Approve] → DeerFlow Coder → DeerFlow Review/Test
+                                            ↑                    │
+                                            └── Self-Fix Loop ──┘
+                                                     │
+                                              Docker Build → Deploy
 ```
 
+**DeerFlow advantages over old pipeline**:
+- Sub-agents run in parallel with isolated context
+- Sandbox executes and tests code in Docker containers
+- Self-fix loops: if tests fail, DeerFlow automatically debugs and retries
+- Long-term memory remembers past builds and patterns
+- Progressive skills loaded based on task context
+
 **Concurrency limits** (8GB RAM VPS):
-- Planning: 3 concurrent
-- Docker build: 1 at a time (RAM gated)
+- DeerFlow planning: 3 concurrent agent threads
+- Docker build: 1 at a time (RAM gated by Rust)
 - Running tools: 5-8 concurrent
 
 ## Project Structure
 
 ```
 codex-ai/
-├── rust/                    # Rust core
+├── rust/                    # Rust Gateway
 │   ├── Cargo.toml
 │   └── src/
-│       ├── main.rs          # Entry point
+│       ├── main.rs          # Entry point + DeerFlow health check
 │       ├── config.rs        # Settings from .env
-│       ├── gateway/         # Telegram bot + router + topics
+│       ├── gateway/         # Telegram bot + router + Forum Topics
 │       ├── orchestrator/    # Build queue + RAM guard + deployer
-│       ├── bridge/          # Python subprocess bridge
-│       ├── scheduler/       # Cron jobs
-│       └── supervisor/      # Process management
-├── python/                  # Python workers
-│   ├── requirements.txt
-│   ├── src/
-│   │   ├── worker.py        # Stdin/stdout JSON worker
-│   │   ├── llm_client.py    # LLM API client
-│   │   ├── memory.py        # Project memory
-│   │   └── agents/          # Planner, Critic, Coder, Tester, DevOps, Researcher
-│   ├── prompts/             # Agent system prompts
-│   └── tests/
-├── docker/base-images/      # Pre-built Docker bases
-├── scripts/                 # Setup scripts
-├── data/                    # Runtime data (topics, memory)
+│       ├── bridge/          # DeerFlow HTTP/SSE bridge
+│       ├── scheduler/       # Cron jobs (health, RAM reports)
+│       └── supervisor/      # Docker process management
+├── deerflow/                # DeerFlow configuration
+│   ├── config.yaml          # DeerFlow server config
+│   └── skills/custom/       # Custom skills for DeerFlow agents
+│       ├── tool-builder/    # Skill: build tools from ideas
+│       └── tool-supervisor/ # Skill: monitor running tools
+├── docker/                  # Docker build files
+│   └── Dockerfile.gateway   # Multi-stage Rust build
+├── docker-compose.yml       # Full stack orchestration
+├── data/                    # Runtime data (topics.json, etc.)
 ├── workspace/projects/      # Generated tool projects
 ├── logs/                    # Log files
-├── .env.example
+├── scripts/                 # Setup scripts
+├── .env.example             # Environment template
 ├── .gitignore
 ├── Makefile
 └── README.md

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Codex AI — Linux/Mac Setup Script
+# Codex AI — Linux/Mac Setup Script (Rust Gateway + DeerFlow)
 set -e
 
-echo "=== Codex AI Setup ==="
+echo "=== Codex AI Setup (Rust + DeerFlow) ==="
 
 # Check Rust
 if ! command -v cargo &> /dev/null; then
@@ -12,25 +12,26 @@ if ! command -v cargo &> /dev/null; then
 fi
 echo "Rust: $(rustc --version)"
 
-# Check Python
-if ! command -v python3 &> /dev/null; then
-    echo "ERROR: Python 3 not found. Please install Python 3.11+"
+# Check Docker
+if ! command -v docker &> /dev/null; then
+    echo "ERROR: Docker not found. Please install Docker."
     exit 1
 fi
-echo "Python: $(python3 --version)"
+echo "Docker: $(docker --version)"
 
-# Setup Python venv
-echo "Creating Python virtual environment..."
-python3 -m venv python/.venv
-source python/.venv/bin/activate
-pip install -r python/requirements.txt
-echo "Python dependencies installed."
+# Check Docker Compose
+if ! docker compose version &> /dev/null; then
+    echo "ERROR: Docker Compose not found. Please install docker-compose-plugin."
+    exit 1
+fi
+echo "Docker Compose: $(docker compose version)"
 
-# Build Rust
-echo "Building Rust core..."
+# Build Rust gateway
+echo "Building Rust gateway..."
 cd rust
 cargo build --release
 cd ..
+echo "Rust gateway built."
 
 # Create directories
 mkdir -p data workspace/projects logs
@@ -43,5 +44,6 @@ fi
 
 echo ""
 echo "=== Setup Complete ==="
-echo "1. Edit .env with your Telegram bot token and LLM API key"
-echo "2. Run: make run"
+echo "1. Edit .env with your Telegram bot token, LLM API key, etc."
+echo "2. Start full stack: make up"
+echo "   Or manually: docker compose up deerflow -d  &&  make run"

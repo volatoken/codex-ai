@@ -1,0 +1,57 @@
+version: "3.8"
+
+# Codex AI — Rust Gateway + DeerFlow Backend
+# ===========================================
+# Architecture:
+#   codex-gateway (Rust) → DeerFlow API (http://deerflow:2024)
+#   DeerFlow handles: LLM calls, agent orchestration, sandbox, memory
+
+services:
+  # ── Rust Gateway ──────────────────────────────────────────
+  # Telegram bot, Forum Topics routing, Build Queue, RAM Guard
+  codex-gateway:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.gateway
+    container_name: codex-gateway
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - DEERFLOW_URL=http://deerflow:2024
+      - RUST_LOG=codex_ai=info
+    volumes:
+      - ./data:/app/data
+      - ./workspace:/app/workspace
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      deerflow:
+        condition: service_healthy
+    mem_limit: 128m
+
+  # ── DeerFlow Backend ──────────────────────────────────────
+  # LangGraph agent server — handles all AI/LLM work
+  deerflow:
+    image: ghcr.io/bytedance/deer-flow:latest
+    container_name: codex-deerflow
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - SEARCH_API=tavily
+    volumes:
+      - ./deerflow/config.yaml:/app/config.yaml:ro
+      - ./deerflow/skills:/app/skills/custom:ro
+      - ./workspace:/mnt/workspace
+      - ./data:/mnt/data
+    ports:
+      - "127.0.0.1:2024:2024"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:2024/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    mem_limit: 1g
+
+volumes:
+  workspace:
+  data:

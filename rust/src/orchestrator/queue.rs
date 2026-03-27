@@ -14,6 +14,9 @@ pub struct BuildJob {
     pub project_name: String,
     pub plan: serde_json::Value,
     pub status: JobStatus,
+    /// DeerFlow thread_id — maintains conversation context across build phases
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thread_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -52,6 +55,7 @@ impl BuildQueue {
             project_name: project_name.clone(),
             plan,
             status: JobStatus::Queued,
+            thread_id: None,
         };
         self.queue.lock().await.push_back(job);
         info!("Build enqueued: {project_name}");
@@ -92,9 +96,9 @@ async fn process_next(
 
     info!("Processing build: {}", job.project_name);
 
-    // Phase 1: Planning + Coding (via Python workers)
+    // Phase 1: Planning via DeerFlow (creates thread for context continuity)
     job.status = JobStatus::Planning;
-    builder.run_planning(&job).await?;
+    builder.run_planning(&mut job).await?;
 
     job.status = JobStatus::Coding;
     builder.run_coding(&job).await?;

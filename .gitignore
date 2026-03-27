@@ -2,7 +2,7 @@
 rust/target/
 **/*.rs.bk
 
-# Python
+# Python (DeerFlow internal)
 __pycache__/
 *.pyc
 *.pyo
