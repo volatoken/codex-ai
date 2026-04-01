@@ -54,6 +54,13 @@ async fn handle_message(
         .map(|u| u.id.0 as i64)
         .unwrap_or(0);
 
+    // File-based debug log (bypasses tracing buffering)
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("logs/gateway-debug.log") {
+        use std::io::Write;
+        let ts = chrono::Utc::now().format("%H:%M:%S%.3f");
+        let _ = writeln!(f, "[{ts}] MSG user={user_id} topic={thread_id:?}: {}", text.chars().take(80).collect::<String>());
+    }
+
     info!(
         "Message from user {user_id} in topic {:?}: {}",
         thread_id,

@@ -1,4 +1,7 @@
 use anyhow::Result;
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use tracing::{info, warn};
 
 mod config;
@@ -35,6 +38,11 @@ async fn main() -> Result<()> {
     // Initialize shared state
     let state = AppState::new(settings).await?;
 
+    // Ensure system forum topics exist (creates them if missing)
+    if let Err(e) = state.topic_manager.ensure_system_topics().await {
+        warn!("Failed to ensure system topics: {e:#}");
+    }
+
     // Start subsystems
     let ram_guard = orchestrator::ram_guard::RamGuard::new(state.settings.total_ram_mb);
     info!("RAM Guard initialized — available: {}MB", ram_guard.available_mb());
@@ -54,6 +62,16 @@ async fn main() -> Result<()> {
 pub struct AppState {
     pub settings: config::Settings,
     pub topic_manager: gateway::topics::TopicManager,
+    pub pending_ideas: Arc<Mutex<HashMap<i64, PendingIdea>>>,
+}
+
+/// An idea awaiting /approve from the user.
+#[derive(Clone, Debug)]
+pub struct PendingIdea {
+    pub project_name: String,
+    pub plan_text: String,
+    pub idea_text: String,
+    pub user_id: i64,
 }
 
 impl AppState {
@@ -62,6 +80,10 @@ impl AppState {
             settings.telegram_bot_token.clone(),
             settings.telegram_group_id,
         );
-        Ok(Self { settings, topic_manager })
+        Ok(Self {
+            settings,
+            topic_manager,
+            pending_ideas: Arc::new(Mutex::new(HashMap::new())),
+        })
     }
 }

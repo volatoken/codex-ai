@@ -27,6 +27,7 @@ workspace/projects/*/
 # Logs
 logs/*.log
 !logs/.gitkeep
+deerflow_adapter.log
 
 # IDE
 .vscode/
